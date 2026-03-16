@@ -1,32 +1,32 @@
 
-# 🤖 Bill Bot
+# 🤖 Billi
 
-**Bill Bot** is a smart, mobile-friendly restaurant bill splitter designed specifically for British Columbia, Canada. It handles GST (5%) for food and GST+PST (12%) for takeout items, allows for complex itemized splits, and resolves group debts efficiently.
+**Billi** is a smart, mobile-friendly restaurant bill splitter designed specifically for British Columbia, Canada. It handles GST (5%) for food and GST+PST (12%) for takeout items, allows for complex itemized splits, and resolves group debts efficiently.
 
 ## 🚀 Quick Deployment (Recommended)
 
-The easiest way to share this with friends is using **Vercel** or **Netlify**.
+The easiest way to share this with friends is using **GitHub Pages**.
 
 ### 1. Push to GitHub
-1. Create a new repository on [GitHub](https://github.com).
+1. Create a new repository on [GitHub](https://github.com) named `restaurant-bill-bot`.
 2. Initialize your local folder as a git repo:
    ```bash
    git init
    git add .
-   git commit -m "Initial commit: Bill Bot is alive!"
-   git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
+   git commit -m "Initial commit: Billi is alive!"
+   git remote add origin https://github.com/windy-molecularyou/restaurant-bill-bot.git
    git push -u origin main
    ```
 
-### 2. Connect to Vercel
-1. Log in to [Vercel](https://vercel.com).
-2. Click **"New Project"** and import your GitHub repository.
-3. **CRITICAL STEP**: Under "Environment Variables", add:
-   - **Key**: `API_KEY`
-   - **Value**: *Your Google Gemini API Key*
-4. Click **Deploy**.
+### 2. Automatic Deployment
+This project includes a GitHub Actions workflow that will automatically build and deploy your app to GitHub Pages whenever you push to the `main` branch.
 
-Once finished, Vercel will give you a public URL (e.g., `bill-bot.vercel.app`) that you can share with your group chat!
+1. Go to your repository settings on GitHub.
+2. Navigate to **Pages** in the sidebar.
+3. Under **Build and deployment > Source**, select **GitHub Actions**.
+
+Once the action completes, your app will be live at `https://windy-molecularyou.github.io/restaurant-bill-bot/`!
+
 
 ## 🛠 Features
 - **Smart Scanning**: Uses Google Gemini to read receipt photos automatically.
