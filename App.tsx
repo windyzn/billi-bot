@@ -36,6 +36,7 @@ const App: React.FC = () => {
   const [copyFeedback, setCopyFeedback] = useState(false);
   const [nameInput, setNameInput] = useState('');
   const [nameHistory, setNameHistory] = useState<string[]>([]);
+  const [showDetailedBreakdown, setShowDetailedBreakdown] = useState(false);
 
   // Load history from localStorage
   useEffect(() => {
@@ -589,6 +590,67 @@ const App: React.FC = () => {
                 </div>
                 <h2 className="text-3xl font-black text-slate-800 tracking-tight">Settlements</h2>
               </div>
+
+              <button 
+                onClick={() => setShowDetailedBreakdown(!showDetailedBreakdown)}
+                className="text-[10px] font-bold text-indigo-500 uppercase tracking-tight hover:text-indigo-700 transition-colors flex items-center gap-1 mx-auto mb-2"
+              >
+                {showDetailedBreakdown ? 'Hide Detailed Breakdown' : 'Show Detailed Breakdown'}
+                <svg className={`w-3 h-3 transition-transform ${showDetailedBreakdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 9l-7 7-7-7"/></svg>
+              </button>
+
+              {showDetailedBreakdown && (
+                <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300 mb-6">
+                  {friends.map(f => {
+                    const friendItems = items.filter(item => item.sharedWith.includes(f.id));
+                    if (friendItems.length === 0 && (calculations.itemCosts[f.id] || 0) <= 0) return null;
+                    
+                    const totalCost = calculations.itemCosts[f.id] || 0;
+                    const subtotalWithTax = friendItems.reduce((acc, item) => {
+                      const shareCount = item.sharedWith.length;
+                      const baseShare = item.price / shareCount;
+                      let taxShare = 0;
+                      if (!item.isTaxIncluded) {
+                        taxShare = (item.price * GST_RATE + (item.taxCategory === TaxCategory.CONTAINERS ? item.price * PST_RATE : 0)) / shareCount;
+                      }
+                      return acc + baseShare + taxShare;
+                    }, 0);
+                    const tipShare = totalCost - subtotalWithTax;
+
+                    return (
+                      <div key={f.id} className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                        <div className="flex justify-between items-center mb-2 border-b border-slate-200 pb-2">
+                          <span className="font-black text-slate-800 text-xs uppercase">{f.name}</span>
+                          <span className="font-black text-indigo-600 text-xs">${totalCost.toFixed(2)}</span>
+                        </div>
+                        <div className="space-y-1.5">
+                          {friendItems.map(item => {
+                            const shareCount = item.sharedWith.length;
+                            const baseShare = item.price / shareCount;
+                            let taxShare = 0;
+                            if (!item.isTaxIncluded) {
+                              taxShare = (item.price * GST_RATE + (item.taxCategory === TaxCategory.CONTAINERS ? item.price * PST_RATE : 0)) / shareCount;
+                            }
+                            return (
+                              <div key={item.id} className="flex justify-between text-[10px] text-slate-500">
+                                <span className="flex-1 truncate mr-2">{item.name} {shareCount > 1 ? <span className="text-[8px] opacity-60">(1/{shareCount})</span> : ''}</span>
+                                <span className="font-mono">${(baseShare + taxShare).toFixed(2)}</span>
+                              </div>
+                            );
+                          })}
+                          {Math.abs(tipShare) > 0.005 && (
+                            <div className="flex justify-between text-[10px] text-indigo-400 font-bold pt-1 border-t border-slate-200 mt-1">
+                              <span>Tip & Adjustments</span>
+                              <span className="font-mono">{tipShare >= 0 ? '+' : ''}${tipShare.toFixed(2)}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
               <div className="space-y-4 flex-1">
                 {calculations.settlements.length > 0 ? (
                   <div className="space-y-3">
