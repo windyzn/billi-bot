@@ -211,7 +211,7 @@ const App: React.FC = () => {
       text += `\n💰 e-Transfer to: ${etransferEmail.trim()}\n`;
     }
     
-    text += `\nSplit via Billi 🤖 https://windy-molecularyou.github.io/restaurant-bill-bot/`;
+    text += `\nSplit via Bill Bot 🤖 https://restaurant-bill-bot.vercel.app/`;
     return text;
   };
 
@@ -284,7 +284,7 @@ const App: React.FC = () => {
         <header className="bg-indigo-700 px-8 py-10 text-white relative overflow-hidden">
           <div className="absolute top-10 right-8 bot-float opacity-30"><BotIcon className="w-16 h-16" /></div>
           <div className="relative z-10 flex flex-col items-start gap-1">
-            <h1 className="text-4xl font-black tracking-tight leading-none">Billi</h1>
+            <h1 className="text-4xl font-black tracking-tight leading-none">Bill Bot</h1>
             <p className="text-indigo-200 text-[10px] font-bold uppercase tracking-[0.2em] whitespace-nowrap">Simple restaurant bill splitter</p>
           </div>
         </header>
