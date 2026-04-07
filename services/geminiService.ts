@@ -16,7 +16,7 @@ export const scanBillWithGemini = async (base64Image: string) => {
           },
         },
         {
-          text: "Extract items from this restaurant bill. For each item, identify if it is 'FOOD' or 'CONTAINERS' (takeout items). Return names and subtotal prices (before tax). If unsure, assume 'FOOD'."
+          text: "Extract items from this restaurant bill. For each item, identify if it is 'GST' (standard food/drink) or 'GST_PST' (takeout items/containers). Return names and subtotal prices (before tax). If unsure, assume 'GST'."
         }
       ]
     },
@@ -31,7 +31,7 @@ export const scanBillWithGemini = async (base64Image: string) => {
             price: { type: Type.NUMBER },
             taxCategory: { 
               type: Type.STRING,
-              enum: [TaxCategory.FOOD, TaxCategory.CONTAINERS]
+              enum: [TaxCategory.GST, TaxCategory.GST_PST]
             }
           },
           required: ["name", "price", "taxCategory"]

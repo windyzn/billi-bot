@@ -1,7 +1,9 @@
 
 export enum TaxCategory {
-  FOOD = 'FOOD', // GST only (5%)
-  CONTAINERS = 'CONTAINERS' // GST (5%) + PST (7%)
+  GST = 'GST', // 5%
+  GST_PST = 'GST_PST', // 12% (5+7)
+  HST_13 = 'HST_13', // 13%
+  CUSTOM = 'CUSTOM'
 }
 
 export interface Friend {
@@ -16,7 +18,8 @@ export interface BillItem {
   price: number;
   taxCategory: TaxCategory;
   sharedWith: string[]; // Array of Friend IDs
-  isTaxIncluded?: boolean; // If true, don't add 5/12% tax on top
+  isTaxIncluded?: boolean; // If true, don't add tax on top
+  customTaxRate?: number; // For CUSTOM category, e.g. 0.10 for 10%
 }
 
 export interface PaymentRecord {

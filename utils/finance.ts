@@ -1,22 +1,27 @@
 
 import { BillItem, Friend, TaxCategory, GST_RATE, PST_RATE, Settlement } from '../types';
 
+export const getItemTaxRate = (item: BillItem): number => {
+  if (item.isTaxIncluded) return 0;
+  switch (item.taxCategory) {
+    case TaxCategory.GST: return GST_RATE;
+    case TaxCategory.GST_PST: return GST_RATE + PST_RATE;
+    case TaxCategory.HST_13: return 0.13;
+    case TaxCategory.CUSTOM: return item.customTaxRate || 0;
+    default: return 0;
+  }
+};
+
 export const calculateItemTotals = (items: BillItem[]) => {
   let subtotal = 0;
-  let gst = 0;
-  let pst = 0;
+  let taxTotal = 0;
 
   items.forEach(item => {
     subtotal += item.price;
-    if (!item.isTaxIncluded) {
-      gst += item.price * GST_RATE;
-      if (item.taxCategory === TaxCategory.CONTAINERS) {
-        pst += item.price * PST_RATE;
-      }
-    }
+    taxTotal += item.price * getItemTaxRate(item);
   });
 
-  return { subtotal, gst, pst, total: subtotal + gst + pst };
+  return { subtotal, taxTotal, total: subtotal + taxTotal };
 };
 
 export const calculateIndividualCosts = (
@@ -32,12 +37,8 @@ export const calculateIndividualCosts = (
   items.forEach(item => {
     if (item.sharedWith.length === 0) return;
     
-    let itemTotal = item.price;
-    if (!item.isTaxIncluded) {
-      const itemGst = item.price * GST_RATE;
-      const itemPst = item.taxCategory === TaxCategory.CONTAINERS ? item.price * PST_RATE : 0;
-      itemTotal = item.price + itemGst + itemPst;
-    }
+    const taxRate = getItemTaxRate(item);
+    const itemTotal = item.price * (1 + taxRate);
     
     const share = itemTotal / item.sharedWith.length;
     item.sharedWith.forEach(friendId => {

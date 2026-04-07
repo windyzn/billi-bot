@@ -5,22 +5,10 @@
 
 ## 🚀 Quick Deployment (Recommended)
 
-The easiest way to share this with friends is using **Vercel** or **Netlify**.
+The easiest way to share this with friends is using **Vercel**.
 
-### 1. Push to GitHub
-1. Create a new repository on [GitHub](https://github.com).
-2. Initialize your local folder as a git repo:
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit: Bill Bot is alive!"
-   git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
-   git push -u origin main
-   ```
-
-### 2. Connect to Vercel
 1. Log in to [Vercel](https://vercel.com).
-2. Click **"New Project"** and import your GitHub repository.
+2. Click **"New Project"** and upload your project files or connect your repository.
 3. **CRITICAL STEP**: Under "Environment Variables", add:
    - **Key**: `API_KEY`
    - **Value**: *Your Google Gemini API Key*
@@ -30,7 +18,7 @@ Once finished, Vercel will give you a public URL (e.g., `bill-bot.vercel.app`) t
 
 ## 🛠 Features
 - **Smart Scanning**: Uses Google Gemini to read receipt photos automatically.
-- **BC Tax Rules**: Automatically applies 5% GST for food or 12% for takeout containers.
+- **Flexible Tax Rules**: Support for GST, PST, HST (13%/15%), and custom tax percentages.
 - **Tip Calculator**: Calculate tip by percentage, flat amount, or by entering the final bill total.
 - **Couple Linking**: Link friends together to settle up as a single unit.
 - **Debt Resolution**: Calculates the minimum number of transfers needed to settle the bill.

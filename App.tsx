@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Friend, BillItem, TaxCategory, GST_RATE, PST_RATE } from './types';
-import { calculateIndividualCosts, solveDebts, calculateItemTotals } from './utils/finance';
+import { calculateIndividualCosts, solveDebts, calculateItemTotals, getItemTaxRate } from './utils/finance';
 import StepProgress from './components/StepProgress';
 
 const BotIcon = ({ className }: { className?: string }) => (
@@ -105,14 +105,15 @@ const App: React.FC = () => {
     }
   };
 
-  const addItem = (name: string, price: number, taxCategory: TaxCategory, isTaxIncluded = false) => {
-    const newItem = {
+  const addItem = (name: string, price: number, taxCategory: TaxCategory, isTaxIncluded = false, customTaxRate?: number) => {
+    const newItem: BillItem = {
       id: Math.random().toString(36).substr(2, 9),
       name,
       price,
       taxCategory,
       sharedWith: friends.map(f => f.id),
-      isTaxIncluded
+      isTaxIncluded,
+      customTaxRate
     };
     setItems([...items, newItem]);
   };
@@ -394,29 +395,78 @@ const App: React.FC = () => {
               </div>
               <div className="bg-slate-50 border border-slate-200 rounded-3xl p-5 space-y-4 shadow-inner">
                 <div className="space-y-3">
-                  <input id="itemName" type="text" placeholder="Item Name (e.g. Burger)" className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 outline-none font-bold" />
+                  <input 
+                    type="text" 
+                    placeholder="Item Name (e.g. Burger)" 
+                    className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 outline-none font-bold"
+                    id="itemNameInput"
+                  />
                   
-                  <div className="flex gap-2">
-                    <div className="flex-[7] relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">$</span>
-                      <input id="itemPrice" type="number" inputMode="decimal" placeholder="0.00" className="w-full bg-white border border-slate-300 rounded-xl pl-6 pr-4 py-3 text-sm focus:border-indigo-500 outline-none font-mono" />
+                  <div className="flex flex-col gap-2">
+                    <div className="flex gap-2">
+                      <div className="flex-[7] relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">$</span>
+                        <input 
+                          type="number" 
+                          inputMode="decimal" 
+                          placeholder="0.00" 
+                          className="w-full bg-white border border-slate-300 rounded-xl pl-6 pr-4 py-3 text-sm focus:border-indigo-500 outline-none font-mono"
+                          id="itemPriceInput"
+                        />
+                      </div>
+                      <select 
+                        id="itemTaxSelect"
+                        onChange={(e) => {
+                          const customInput = document.getElementById('customTaxContainer');
+                          if (e.target.value === TaxCategory.CUSTOM) {
+                            customInput?.classList.remove('hidden');
+                          } else {
+                            customInput?.classList.add('hidden');
+                          }
+                        }}
+                        className="flex-[3] bg-white border border-slate-300 rounded-xl px-2 py-3 text-[10px] font-bold text-slate-600 focus:border-indigo-500 outline-none"
+                      >
+                        <option value={TaxCategory.GST}>GST 5%</option>
+                        <option value={TaxCategory.GST_PST}>GST+PST 12%</option>
+                        <option value={TaxCategory.HST_13}>HST 13%</option>
+                        <option value={TaxCategory.CUSTOM}>Custom %</option>
+                        <option value="INCLUDED">Tax Included</option>
+                      </select>
                     </div>
-                    <select id="itemTax" className="flex-[3] bg-white border border-slate-300 rounded-xl px-2 py-3 text-[10px] font-bold text-slate-600 focus:border-indigo-500 outline-none">
-                      <option value={TaxCategory.FOOD}>GST 5%</option>
-                      <option value={TaxCategory.CONTAINERS}>PST 12%</option>
-                      <option value="INCLUDED">Tax Included</option>
-                    </select>
+                    
+                    <div id="customTaxContainer" className="hidden animate-in fade-in slide-in-from-top-1 duration-200">
+                      <div className="relative">
+                        <input 
+                          id="customTaxRateInput"
+                          type="number" 
+                          inputMode="decimal" 
+                          placeholder="Custom Tax % (e.g. 10)" 
+                          className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 outline-none font-bold" 
+                        />
+                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">%</span>
+                      </div>
+                    </div>
                   </div>
                   
                   <button onClick={() => {
-                      const n = document.getElementById('itemName') as HTMLInputElement;
-                      const p = document.getElementById('itemPrice') as HTMLInputElement;
-                      const t = document.getElementById('itemTax') as HTMLSelectElement;
+                      const n = document.getElementById('itemNameInput') as HTMLInputElement;
+                      const p = document.getElementById('itemPriceInput') as HTMLInputElement;
+                      const t = document.getElementById('itemTaxSelect') as HTMLSelectElement;
+                      const c = document.getElementById('customTaxRateInput') as HTMLInputElement;
+                      
                       if (n.value && p.value) { 
                         const isInc = t.value === 'INCLUDED';
-                        const cat = isInc ? TaxCategory.FOOD : t.value as TaxCategory;
-                        addItem(n.value, parseFloat(p.value), cat, isInc); 
-                        n.value = ''; p.value = ''; 
+                        const cat = isInc ? TaxCategory.GST : t.value as TaxCategory;
+                        const customRate = cat === TaxCategory.CUSTOM ? (parseFloat(c.value) / 100) : undefined;
+                        
+                        addItem(n.value, parseFloat(p.value), cat, isInc, customRate); 
+                        
+                        // Reset
+                        n.value = ''; 
+                        p.value = ''; 
+                        c.value = '';
+                        t.value = TaxCategory.GST;
+                        document.getElementById('customTaxContainer')?.classList.add('hidden');
                       }
                     }} className="w-full bg-indigo-600 text-white font-black py-4 rounded-xl hover:bg-indigo-700 transition-all active:scale-[0.98] shadow-lg shadow-indigo-100 uppercase tracking-widest text-xs">
                     Add Item to Bill
@@ -429,8 +479,8 @@ const App: React.FC = () => {
                   <div key={item.id} className="flex justify-between items-center p-4 bg-white border border-slate-100 rounded-2xl shadow-sm hover:border-indigo-200 transition-all group">
                     <div>
                       <p className="font-bold text-slate-800 text-sm">{item.name}</p>
-                      <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md ${item.isTaxIncluded ? 'bg-indigo-50 text-indigo-600' : item.taxCategory === TaxCategory.FOOD ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
-                        {item.isTaxIncluded ? 'Tax Included' : item.taxCategory === TaxCategory.FOOD ? 'GST 5%' : 'PST 12%'}
+                      <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md ${item.isTaxIncluded ? 'bg-indigo-50 text-indigo-600' : 'bg-blue-100 text-blue-700'}`}>
+                        {item.isTaxIncluded ? 'Tax Included' : `${item.taxCategory === TaxCategory.CUSTOM ? (item.customTaxRate! * 100).toFixed(0) : (getItemTaxRate(item) * 100).toFixed(0)}% Tax`}
                       </span>
                     </div>
                     <div className="flex items-center gap-4">
@@ -458,7 +508,7 @@ const App: React.FC = () => {
                       <div className="bg-slate-50 px-5 py-3 flex justify-between items-center border-b border-slate-100">
                         <span className="font-bold text-slate-800 text-sm truncate">{item.name}</span>
                         <span className="text-[10px] font-black text-slate-500 bg-white px-3 py-1 rounded-lg border border-slate-200">
-                          ${(item.isTaxIncluded ? item.price : (item.price * (1 + GST_RATE + (item.taxCategory === TaxCategory.CONTAINERS ? PST_RATE : 0)))).toFixed(2)} Total
+                          ${(item.price * (1 + getItemTaxRate(item))).toFixed(2)} Total
                         </span>
                       </div>
                       <div className="p-4 flex flex-wrap gap-2">
@@ -609,10 +659,8 @@ const App: React.FC = () => {
                     const subtotalWithTax = friendItems.reduce((acc, item) => {
                       const shareCount = item.sharedWith.length;
                       const baseShare = item.price / shareCount;
-                      let taxShare = 0;
-                      if (!item.isTaxIncluded) {
-                        taxShare = (item.price * GST_RATE + (item.taxCategory === TaxCategory.CONTAINERS ? item.price * PST_RATE : 0)) / shareCount;
-                      }
+                      const taxRate = getItemTaxRate(item);
+                      const taxShare = (item.price * taxRate) / shareCount;
                       return acc + baseShare + taxShare;
                     }, 0);
                     const tipShare = totalCost - subtotalWithTax;
@@ -627,10 +675,8 @@ const App: React.FC = () => {
                           {friendItems.map(item => {
                             const shareCount = item.sharedWith.length;
                             const baseShare = item.price / shareCount;
-                            let taxShare = 0;
-                            if (!item.isTaxIncluded) {
-                              taxShare = (item.price * GST_RATE + (item.taxCategory === TaxCategory.CONTAINERS ? item.price * PST_RATE : 0)) / shareCount;
-                            }
+                            const taxRate = getItemTaxRate(item);
+                            const taxShare = (item.price * taxRate) / shareCount;
                             return (
                               <div key={item.id} className="flex justify-between text-[10px] text-slate-500">
                                 <span className="flex-1 truncate mr-2">{item.name} {shareCount > 1 ? <span className="text-[8px] opacity-60">(1/{shareCount})</span> : ''}</span>
