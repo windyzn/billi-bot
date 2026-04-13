@@ -212,7 +212,7 @@ const App: React.FC = () => {
       text += `\n💰 e-Transfer to: ${etransferEmail.trim()}\n`;
     }
     
-    text += `\nSplit via Bill Bot 🤖 https://restaurant-bill-bot.vercel.app/`;
+    text += `\nSplit via Bill Bot 🤖 https://windyzn.github.io/billi-bot/`;
     return text;
   };
 
