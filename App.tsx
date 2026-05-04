@@ -111,7 +111,7 @@ const App: React.FC = () => {
       name,
       price,
       taxCategory,
-      sharedWith: friends.map(f => f.id),
+      sharedWith: [],
       isTaxIncluded,
       customTaxRate
     };
