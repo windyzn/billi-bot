@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Friend, BillItem, TaxCategory, GST_RATE, PST_RATE } from './types';
+import { Friend, BillItem, TaxCategory, GST_RATE, PST_RATE, Venue } from './types';
 import { calculateIndividualCosts, solveDebts, calculateItemTotals, getItemTaxRate } from './utils/finance';
 import StepProgress from './components/StepProgress';
 
@@ -18,17 +18,28 @@ const HeartIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
 );
 
+const DeleteIcon = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+);
+
+const DEFAULT_VENUE_ID = 'default';
+
 const App: React.FC = () => {
   const [step, setStep] = useState(1);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [items, setItems] = useState<BillItem[]>([]);
-  const [tip, setTip] = useState<number>(0);
-  const [tipMode, setTipMode] = useState<'amount' | 'percent' | 'total'>('percent');
-  const [tipPercent, setTipPercent] = useState<number>(15);
-  const [discount, setDiscount] = useState<number>(0);
-  const [discountMode, setDiscountMode] = useState<'amount' | 'percent'>('amount');
-  const [discountPercent, setDiscountPercent] = useState<number>(0);
-  const [manualGrandTotal, setManualGrandTotal] = useState<number>(0);
+  const [venues, setVenues] = useState<Venue[]>([{
+    id: DEFAULT_VENUE_ID,
+    name: 'Main Place',
+    tip: 0,
+    tipMode: 'percent',
+    tipPercent: 15,
+    discount: 0,
+    discountMode: 'amount',
+    discountPercent: 0,
+    manualGrandTotal: 0
+  }]);
+  const [activeVenueId, setActiveVenueId] = useState<string>(DEFAULT_VENUE_ID);
   const [payments, setPayments] = useState<Record<string, number>>({});
   const [etransferEmail, setEtransferEmail] = useState('');
   const [linkingFriendId, setLinkingFriendId] = useState<string | null>(null);
@@ -37,6 +48,10 @@ const App: React.FC = () => {
   const [nameInput, setNameInput] = useState('');
   const [nameHistory, setNameHistory] = useState<string[]>([]);
   const [showDetailedBreakdown, setShowDetailedBreakdown] = useState(false);
+  const [isAddingVenue, setIsAddingVenue] = useState(false);
+  const [newVenueName, setNewVenueName] = useState('');
+  const [editingVenueId, setEditingVenueId] = useState<string | null>(null);
+  const [editVenueName, setEditVenueName] = useState('');
 
   // Load history from localStorage
   useEffect(() => {
@@ -105,6 +120,26 @@ const App: React.FC = () => {
     }
   };
 
+  const addVenue = (name: string) => {
+    const newVenue: Venue = {
+      id: Math.random().toString(36).substr(2, 9),
+      name: name || `Place ${venues.length + 1}`,
+      tip: 0,
+      tipMode: 'percent',
+      tipPercent: 15,
+      discount: 0,
+      discountMode: 'amount',
+      discountPercent: 0,
+      manualGrandTotal: 0
+    };
+    setVenues([...venues, newVenue]);
+    setActiveVenueId(newVenue.id);
+  };
+
+  const updateVenue = (venueId: string, updates: Partial<Venue>) => {
+    setVenues(venues.map(v => v.id === venueId ? { ...v, ...updates } : v));
+  };
+
   const addItem = (name: string, price: number, taxCategory: TaxCategory, isTaxIncluded = false, customTaxRate?: number) => {
     const newItem: BillItem = {
       id: Math.random().toString(36).substr(2, 9),
@@ -113,7 +148,8 @@ const App: React.FC = () => {
       taxCategory,
       sharedWith: [],
       isTaxIncluded,
-      customTaxRate
+      customTaxRate,
+      venueId: activeVenueId
     };
     setItems([...items, newItem]);
   };
@@ -142,33 +178,54 @@ const App: React.FC = () => {
     setItems(items.map(item => ({ ...item, sharedWith: [...allFriendIds] })));
   };
 
+  const activeVenue = useMemo(() => 
+    venues.find(v => v.id === activeVenueId) || venues[0],
+    [venues, activeVenueId]
+  );
+
   const calculations = useMemo(() => {
-    const totals = calculateItemTotals(items);
-    
-    let effectiveDiscount = discount;
-    if (discountMode === 'percent') {
-      effectiveDiscount = totals.subtotal * (discountPercent / 100);
-    }
+    const venueCosts: Record<string, Record<string, number>> = {}; // venueId -> friendId -> cost
+    const venueTotals: Record<string, { subtotal: number, taxTotal: number, total: number, effectiveTip: number, effectiveDiscount: number, grandTotal: number }> = {};
 
-    let effectiveTip = tip;
-    if (tipMode === 'percent') {
-      effectiveTip = totals.subtotal * (tipPercent / 100);
-    } else if (tipMode === 'total') {
-      effectiveTip = Math.max(0, manualGrandTotal - totals.total + effectiveDiscount);
-    }
+    venues.forEach(venue => {
+      const venueItems = items.filter(i => i.venueId === venue.id);
+      const totals = calculateItemTotals(venueItems);
+      
+      let effectiveDiscount = venue.discount;
+      if (venue.discountMode === 'percent') {
+        effectiveDiscount = totals.subtotal * (venue.discountPercent / 100);
+      }
 
-    const netAdjustment = effectiveTip - effectiveDiscount;
-    const itemCosts = calculateIndividualCosts(friends, items, netAdjustment);
-    const grandTotal = totals.total + effectiveTip - effectiveDiscount;
+      let effectiveTip = venue.tip;
+      if (venue.tipMode === 'percent') {
+        effectiveTip = totals.subtotal * (venue.tipPercent / 100);
+      } else if (venue.tipMode === 'total') {
+        effectiveTip = Math.max(0, venue.manualGrandTotal - totals.total + effectiveDiscount);
+      }
+
+      const netAdjustment = effectiveTip - effectiveDiscount;
+      const itemCosts = calculateIndividualCosts(friends, venueItems, netAdjustment);
+      const grandTotal = totals.total + effectiveTip - effectiveDiscount;
+
+      venueCosts[venue.id] = itemCosts;
+      venueTotals[venue.id] = { ...totals, effectiveTip, effectiveDiscount, grandTotal };
+    });
+
+    const aggregateItemCosts: Record<string, number> = {};
+    friends.forEach(f => {
+      aggregateItemCosts[f.id] = venues.reduce((sum, v) => sum + (venueCosts[v.id][f.id] || 0), 0);
+    });
+
+    const totalGrandTotal = Object.values(venueTotals).reduce((sum, vt) => sum + vt.grandTotal, 0);
     
     const balances: Record<string, number> = {};
     friends.forEach(f => {
-      balances[f.id] = (payments[f.id] || 0) - (itemCosts[f.id] || 0);
+      balances[f.id] = (payments[f.id] || 0) - (aggregateItemCosts[f.id] || 0);
     });
     const settlements = solveDebts(balances, friends);
     
-    return { itemCosts, totals, grandTotal, settlements, effectiveTip, effectiveDiscount };
-  }, [friends, items, tip, tipMode, tipPercent, discount, discountMode, discountPercent, manualGrandTotal, payments]);
+    return { itemCosts: aggregateItemCosts, venueTotals, totalGrandTotal, settlements };
+  }, [friends, items, venues, payments]);
 
   const paidTotal = useMemo(() => 
     (Object.values(payments) as number[]).reduce((acc, curr) => acc + (curr || 0), 0),
@@ -178,15 +235,23 @@ const App: React.FC = () => {
   const setSinglePayer = (friendId: string) => {
     const newPayments: Record<string, number> = {};
     friends.forEach(f => {
-      newPayments[f.id] = f.id === friendId ? Number(calculations.grandTotal.toFixed(2)) : 0;
+      newPayments[f.id] = f.id === friendId ? Number(calculations.totalGrandTotal.toFixed(2)) : 0;
     });
     setPayments(newPayments);
   };
 
   const generateReportText = () => {
-    let text = `Total Bill: $${calculations.grandTotal.toFixed(2)}\n`;
+    let text = `Total Sessions: $${calculations.totalGrandTotal.toFixed(2)}\n`;
     text += `-------------------\n`;
     
+    venues.forEach(v => {
+      const vt = calculations.venueTotals[v.id];
+      if (vt.grandTotal > 0) {
+        text += `${v.name}: $${vt.grandTotal.toFixed(2)}\n`;
+      }
+    });
+    text += `-------------------\n`;
+
     if (calculations.settlements.length > 0) {
       text += `SETTLEMENTS:\n`;
       text += calculations.settlements.map(s => `• ${s.fromName} pays ${s.toName}: $${s.amount.toFixed(2)}`).join('\n');
@@ -195,12 +260,10 @@ const App: React.FC = () => {
 
     text += `BREAKDOWN:\n`;
     const breakdownLines = friends.map(f => {
-      const friendItems = items.filter(item => item.sharedWith.includes(f.id));
       const totalCost = calculations.itemCosts[f.id] || 0;
       
       if (totalCost > 0) {
-        const itemNames = friendItems.map(item => item.name).join(', ');
-        return `${f.name}: $${totalCost.toFixed(2)} (${itemNames})`;
+        return `${f.name}: $${totalCost.toFixed(2)}`;
       }
       return null;
     }).filter(Boolean);
@@ -257,13 +320,13 @@ const App: React.FC = () => {
   const getBotSpeech = () => {
     switch (step) {
       case 1: return "Hello! I'm Billi. Who are we splitting the bill with today? You can link couples too!";
-      case 2: return "Let's record everything that was ordered. Type in items below!";
+      case 2: return "Let's record everything that was ordered. You can add multiple places!";
       case 3: 
-        if (tipMode === 'total' && manualGrandTotal === 0) {
-          return "I can calculate the tip automatically! Just enter the final bill total from your receipt.";
+        if (activeVenue.tipMode === 'total' && activeVenue.manualGrandTotal === 0) {
+          return `Assign items for ${activeVenue.name}. Enter the total from your receipt!`;
         }
-        return "Time to assign the items. Tap names to split things up!";
-      case 4: return "Almost there! Tell me who paid what on the final bill.";
+        return `Tipping for ${activeVenue.name}. Tap names to split items!`;
+      case 4: return "Almost there! Tell me who paid what for all places combined.";
       case 5: return "Calculation complete! I've found the most efficient way to settle up.";
       default: return "Beep boop!";
     }
@@ -389,121 +452,246 @@ const App: React.FC = () => {
           )}
 
           {step === 2 && (
-            <div className="space-y-6 animate-in slide-in-from-right-4 duration-500">
-              <div className="flex justify-between items-center">
-                <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest">Add Items</h2>
-              </div>
-              <div className="bg-slate-50 border border-slate-200 rounded-3xl p-5 space-y-4 shadow-inner">
-                <div className="space-y-3">
-                  <input 
-                    type="text" 
-                    placeholder="Item Name (e.g. Burger)" 
-                    className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 outline-none font-bold"
-                    id="itemNameInput"
-                  />
-                  
-                  <div className="flex flex-col gap-2">
-                    <div className="flex gap-2">
-                      <div className="flex-[7] relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">$</span>
+            <div className="space-y-0 animate-in slide-in-from-right-4 duration-500">
+              {/* Venue Tabs */}
+              <div className="flex items-end gap-1 px-2">
+                {venues.map(v => (
+                  <div key={v.id} className="relative group shrink-0">
+                    {editingVenueId === v.id ? (
+                      <div className="flex items-center bg-white rounded-t-2xl border-t border-x border-slate-200 overflow-hidden shadow-sm">
                         <input 
-                          type="number" 
-                          inputMode="decimal" 
-                          placeholder="0.00" 
-                          className="w-full bg-white border border-slate-300 rounded-xl pl-6 pr-4 py-3 text-sm focus:border-indigo-500 outline-none font-mono"
-                          id="itemPriceInput"
+                          autoFocus
+                          type="text" 
+                          value={editVenueName}
+                          onChange={(e) => setEditVenueName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              updateVenue(v.id, { name: editVenueName || v.name });
+                              setEditingVenueId(null);
+                            }
+                            if (e.key === 'Escape') setEditingVenueId(null);
+                          }}
+                          onBlur={() => {
+                            updateVenue(v.id, { name: editVenueName || v.name });
+                            setEditingVenueId(null);
+                          }}
+                          className="px-4 py-3 text-[10px] font-black uppercase tracking-widest outline-none w-32"
                         />
                       </div>
-                      <select 
-                        id="itemTaxSelect"
-                        onChange={(e) => {
-                          const customInput = document.getElementById('customTaxContainer');
-                          if (e.target.value === TaxCategory.CUSTOM) {
-                            customInput?.classList.remove('hidden');
-                          } else {
-                            customInput?.classList.add('hidden');
+                    ) : (
+                      <button 
+                        onClick={() => setActiveVenueId(v.id)}
+                        onDoubleClick={() => {
+                          setEditingVenueId(v.id);
+                          setEditVenueName(v.name);
+                        }}
+                        className={`px-5 py-3 rounded-t-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap border-t border-x ${v.id === activeVenueId ? 'bg-slate-50 border-slate-200 text-indigo-600' : 'bg-slate-100/50 border-transparent text-slate-400 hover:bg-slate-100 hover:text-slate-500'}`}
+                      >
+                        {v.name}
+                      </button>
+                    )}
+                    {v.id !== DEFAULT_VENUE_ID && v.id === activeVenueId && editingVenueId !== v.id && (
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm(`Remove ${v.name}?`)) {
+                            setVenues(venues.filter(venue => venue.id !== v.id));
+                            setItems(items.filter(item => item.venueId !== v.id));
+                            setActiveVenueId(DEFAULT_VENUE_ID);
                           }
                         }}
-                        className="flex-[3] bg-white border border-slate-300 rounded-xl px-2 py-3 text-[10px] font-bold text-slate-600 focus:border-indigo-500 outline-none"
+                        className="absolute -top-1 -right-1 bg-rose-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[8px] border border-white shadow-sm transition-transform hover:scale-110"
                       >
-                        <option value={TaxCategory.GST}>GST 5%</option>
-                        <option value={TaxCategory.GST_PST}>GST+PST 12%</option>
-                        <option value={TaxCategory.HST_13}>HST 13%</option>
-                        <option value={TaxCategory.CUSTOM}>Custom %</option>
-                        <option value="INCLUDED">Tax Included</option>
-                      </select>
-                    </div>
-                    
-                    <div id="customTaxContainer" className="hidden animate-in fade-in slide-in-from-top-1 duration-200">
-                      <div className="relative">
-                        <input 
-                          id="customTaxRateInput"
-                          type="number" 
-                          inputMode="decimal" 
-                          placeholder="Custom Tax % (e.g. 10)" 
-                          className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 outline-none font-bold" 
-                        />
-                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">%</span>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <button onClick={() => {
-                      const n = document.getElementById('itemNameInput') as HTMLInputElement;
-                      const p = document.getElementById('itemPriceInput') as HTMLInputElement;
-                      const t = document.getElementById('itemTaxSelect') as HTMLSelectElement;
-                      const c = document.getElementById('customTaxRateInput') as HTMLInputElement;
-                      
-                      if (n.value && p.value) { 
-                        const isInc = t.value === 'INCLUDED';
-                        const cat = isInc ? TaxCategory.GST : t.value as TaxCategory;
-                        const customRate = cat === TaxCategory.CUSTOM ? (parseFloat(c.value) / 100) : undefined;
-                        
-                        addItem(n.value, parseFloat(p.value), cat, isInc, customRate); 
-                        
-                        // Reset
-                        n.value = ''; 
-                        p.value = ''; 
-                        c.value = '';
-                        t.value = TaxCategory.GST;
-                        document.getElementById('customTaxContainer')?.classList.add('hidden');
-                      }
-                    }} className="w-full bg-indigo-600 text-white font-black py-4 rounded-xl hover:bg-indigo-700 transition-all active:scale-[0.98] shadow-lg shadow-indigo-100 uppercase tracking-widest text-xs">
-                    Add Item to Bill
-                  </button>
-                </div>
-              </div>
-              
-              <div className="max-h-[35vh] overflow-y-auto space-y-2 pr-1 no-scrollbar">
-                {items.map(item => (
-                  <div key={item.id} className="flex justify-between items-center p-4 bg-white border border-slate-100 rounded-2xl shadow-sm hover:border-indigo-200 transition-all group">
-                    <div>
-                      <p className="font-bold text-slate-800 text-sm">{item.name}</p>
-                      <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md ${item.isTaxIncluded ? 'bg-indigo-50 text-indigo-600' : 'bg-blue-100 text-blue-700'}`}>
-                        {item.isTaxIncluded ? 'Tax Included' : `${item.taxCategory === TaxCategory.CUSTOM ? (item.customTaxRate! * 100).toFixed(0) : (getItemTaxRate(item) * 100).toFixed(0)}% Tax`}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <span className="font-mono font-black text-slate-900">${item.price.toFixed(2)}</span>
-                      <button onClick={() => removeItem(item.id)} className="text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                        ×
                       </button>
-                    </div>
+                    )}
                   </div>
                 ))}
+                
+                {isAddingVenue ? (
+                  <div className="flex items-center bg-white rounded-t-2xl border-t border-x border-indigo-200 overflow-hidden shadow-sm shrink-0">
+                    <input 
+                      autoFocus
+                      type="text" 
+                      placeholder="Place name..."
+                      value={newVenueName}
+                      onChange={(e) => setNewVenueName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && newVenueName.trim()) {
+                          addVenue(newVenueName.trim());
+                          setIsAddingVenue(false);
+                          setNewVenueName('');
+                        }
+                        if (e.key === 'Escape') setIsAddingVenue(false);
+                      }}
+                      onBlur={() => {
+                        if (newVenueName.trim()) {
+                          addVenue(newVenueName.trim());
+                        }
+                        setIsAddingVenue(false);
+                        setNewVenueName('');
+                      }}
+                      className="px-4 py-3 text-[10px] font-black uppercase tracking-widest outline-none w-32"
+                    />
+                  </div>
+                ) : (
+                  <button 
+                    onClick={() => setIsAddingVenue(true)}
+                    className="px-4 py-3 rounded-t-2xl text-[10px] font-black uppercase tracking-widest bg-indigo-50 text-indigo-500 border-t border-x border-indigo-100 hover:bg-indigo-100/50 transition-all font-mono"
+                  >
+                    + NEW PLACE
+                  </button>
+                )}
+              </div>
+
+              {/* Body */}
+              <div className="bg-slate-50 border border-slate-200 rounded-b-3xl rounded-tr-3xl p-6 space-y-6 shadow-inner -mt-[1px]">
+                <div className="space-y-4">
+                  <div className="space-y-3">
+                    <input 
+                      type="text" 
+                      placeholder="Item Name (e.g. Burger)" 
+                      className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 outline-none font-bold shadow-sm"
+                      id="itemNameInput"
+                    />
+                    
+                    <div className="flex flex-col gap-2">
+                      <div className="flex gap-2">
+                        <div className="flex-[7] relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">$</span>
+                          <input 
+                            type="number" 
+                            inputMode="decimal" 
+                            placeholder="0.00" 
+                            className="w-full bg-white border border-slate-300 rounded-xl pl-6 pr-4 py-3 text-sm focus:border-indigo-500 outline-none font-mono shadow-sm"
+                            id="itemPriceInput"
+                          />
+                        </div>
+                        <select 
+                          id="itemTaxSelect"
+                          onChange={(e) => {
+                            const customInput = document.getElementById('customTaxContainer');
+                            if (e.target.value === TaxCategory.CUSTOM) {
+                              customInput?.classList.remove('hidden');
+                            } else {
+                              customInput?.classList.add('hidden');
+                            }
+                          }}
+                          className="flex-[3] bg-white border border-slate-300 rounded-xl px-2 py-3 text-[10px] font-bold text-slate-600 focus:border-indigo-500 outline-none shadow-sm"
+                        >
+                          <option value={TaxCategory.GST}>GST 5%</option>
+                          <option value={TaxCategory.GST_PST}>GST+PST 12%</option>
+                          <option value={TaxCategory.HST_13}>HST 13%</option>
+                          <option value={TaxCategory.CUSTOM}>Custom %</option>
+                          <option value="INCLUDED">Tax Included</option>
+                        </select>
+                      </div>
+                      
+                      <div id="customTaxContainer" className="hidden animate-in fade-in slide-in-from-top-1 duration-200">
+                        <div className="relative">
+                          <input 
+                            id="customTaxRateInput"
+                            type="number" 
+                            inputMode="decimal" 
+                            placeholder="Custom Tax % (e.g. 10)" 
+                            className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 outline-none font-bold" 
+                          />
+                          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">%</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <button onClick={() => {
+                        const n = document.getElementById('itemNameInput') as HTMLInputElement;
+                        const p = document.getElementById('itemPriceInput') as HTMLInputElement;
+                        const t = document.getElementById('itemTaxSelect') as HTMLSelectElement;
+                        const c = document.getElementById('customTaxRateInput') as HTMLInputElement;
+                        
+                        if (n.value && p.value) { 
+                          const isInc = t.value === 'INCLUDED';
+                          const cat = isInc ? TaxCategory.GST : t.value as TaxCategory;
+                          const customRate = cat === TaxCategory.CUSTOM ? (parseFloat(c.value) / 100) : undefined;
+                          
+                          addItem(n.value, parseFloat(p.value), cat, isInc, customRate); 
+                          
+                          // Reset
+                          n.value = ''; 
+                          p.value = ''; 
+                          c.value = '';
+                          t.value = TaxCategory.GST;
+                          document.getElementById('customTaxContainer')?.classList.add('hidden');
+                        }
+                      }} className="w-full bg-indigo-600 text-white font-black py-4 rounded-xl hover:bg-indigo-700 transition-all active:scale-[0.98] shadow-lg shadow-indigo-100 uppercase tracking-widest text-xs">
+                      Add to {activeVenue.name}
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="max-h-[35vh] overflow-y-auto space-y-2 pr-1 no-scrollbar pt-4 border-t border-slate-200">
+                  {items.filter(i => i.venueId === activeVenueId).map(item => (
+                    <div key={item.id} className="flex justify-between items-center p-4 bg-white border border-slate-100 rounded-2xl shadow-sm hover:border-indigo-200 transition-all group">
+                      <div>
+                        <p className="font-bold text-slate-800 text-sm">{item.name}</p>
+                        <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md ${item.isTaxIncluded ? 'bg-indigo-50 text-indigo-600' : 'bg-blue-100 text-blue-700'}`}>
+                          {item.isTaxIncluded ? 'Tax Included' : `${item.taxCategory === TaxCategory.CUSTOM ? (item.customTaxRate! * 100).toFixed(0) : (getItemTaxRate(item) * 100).toFixed(0)}% Tax`}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <span className="font-mono font-black text-slate-900">${item.price.toFixed(2)}</span>
+                        <button onClick={() => removeItem(item.id)} className="text-slate-300 hover:text-rose-500 transition-colors p-1">
+                          <DeleteIcon className="w-5 h-5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {items.filter(i => i.venueId === activeVenueId).length === 0 && (
+                    <div className="p-12 text-center bg-white/50 rounded-3xl border-2 border-dashed border-slate-200">
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">No items for this place yet.</p>
+                      <p className="text-[9px] font-bold text-slate-300 mt-1 uppercase tracking-widest">Type them in above!</p>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
 
           {step === 3 && (
-            <div className="space-y-6 animate-in slide-in-from-right-4 duration-500">
-              <div className="flex justify-between items-center">
-                <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest">Share Mapping</h2>
-                <button onClick={splitAllEvenly} className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-200 uppercase hover:bg-indigo-600 hover:text-white transition-all">Split Evenly</button>
+            <div className="space-y-0 animate-in slide-in-from-right-4 duration-500">
+              {/* Venue Tabs */}
+              <div className="flex items-end gap-1 px-2">
+                {venues.map(v => (
+                  <button 
+                    key={v.id} 
+                    onClick={() => setActiveVenueId(v.id)}
+                    className={`px-5 py-3 rounded-t-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap border-t border-x ${v.id === activeVenueId ? 'bg-slate-50 border-slate-200 text-indigo-600' : 'bg-slate-100/50 border-transparent text-slate-400 hover:bg-slate-100 hover:text-slate-500'}`}
+                  >
+                    {v.name}
+                  </button>
+                ))}
+              </div>
+
+              {/* Tab Body */}
+              <div className="bg-slate-50 border border-slate-200 rounded-b-3xl rounded-tr-3xl p-6 space-y-8 shadow-inner -mt-[1px]">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Who split what at {activeVenue.name}?</h2>
+                  <button 
+                    onClick={() => {
+                    const venueItems = items.filter(i => i.venueId === activeVenueId);
+                    const allFriendIds = friends.map(f => f.id);
+                    setItems(items.map(item => 
+                      item.venueId === activeVenueId 
+                        ? { ...item, sharedWith: [...allFriendIds] } 
+                        : item
+                    ));
+                  }} 
+                  className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-200 uppercase hover:bg-indigo-600 hover:text-white transition-all"
+                >
+                  Split All {activeVenue.name} Evenly
+                </button>
               </div>
               <div className="relative">
-                <div className={`space-y-4 max-h-[30vh] overflow-y-auto pr-1 no-scrollbar rounded-3xl ${items.length > 2 ? 'scroll-hint' : ''}`}>
-                  {items.map(item => (
+                <div className={`space-y-4 max-h-[30vh] overflow-y-auto pr-1 no-scrollbar rounded-3xl ${items.filter(i => i.venueId === activeVenueId).length > 2 ? 'scroll-hint' : ''}`}>
+                  {items.filter(i => i.venueId === activeVenueId).map(item => (
                     <div key={item.id} className="bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm hover:border-indigo-200 transition-all">
                       <div className="bg-slate-50 px-5 py-3 flex justify-between items-center border-b border-slate-100">
                         <span className="font-bold text-slate-800 text-sm truncate">{item.name}</span>
@@ -520,69 +708,74 @@ const App: React.FC = () => {
                       </div>
                     </div>
                   ))}
+                  {items.filter(i => i.venueId === activeVenueId).length === 0 && (
+                    <div className="p-8 text-center bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">No items for this place yet.</p>
+                    </div>
+                  )}
                 </div>
-                {items.length > 2 && <div className="text-center text-[9px] font-black text-slate-300 uppercase tracking-widest mt-1">↓ Scroll for more items ↓</div>}
               </div>
               
               <div className="pt-4 border-t-2 border-slate-100 space-y-6">
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
                     <div className="flex flex-col">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Add Tip / Bill Total</label>
-                      <button onClick={() => setTipMode('total')} className="text-[9px] font-black text-indigo-500 flex items-center gap-1 mt-1 hover:text-indigo-700 transition-colors">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Tip for {activeVenue.name}</label>
+                      <button onClick={() => updateVenue(activeVenueId, { tipMode: 'total' })} className="text-[9px] font-black text-indigo-500 flex items-center gap-1 mt-1 hover:text-indigo-700 transition-colors">
                         <svg className="w-2 h-2" fill="currentColor" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                        Calculate tip for me?
+                        Calculate tip from receipt?
                       </button>
                     </div>
                     <div className="flex bg-slate-100 p-1 rounded-xl">
-                      <button onClick={() => setTipMode('percent')} className={`px-2 py-1.5 rounded-lg text-[9px] font-black transition-all ${tipMode === 'percent' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>%</button>
-                      <button onClick={() => setTipMode('amount')} className={`px-2 py-1.5 rounded-lg text-[9px] font-black transition-all ${tipMode === 'amount' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>$</button>
-                      <button onClick={() => setTipMode('total')} className={`px-2 py-1.5 rounded-lg text-[9px] font-black transition-all ${tipMode === 'total' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>BILL TOTAL</button>
+                      <button onClick={() => updateVenue(activeVenueId, { tipMode: 'percent' })} className={`px-2 py-1.5 rounded-lg text-[9px] font-black transition-all ${activeVenue.tipMode === 'percent' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>%</button>
+                      <button onClick={() => updateVenue(activeVenueId, { tipMode: 'amount' })} className={`px-2 py-1.5 rounded-lg text-[9px] font-black transition-all ${activeVenue.tipMode === 'amount' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>$</button>
+                      <button onClick={() => updateVenue(activeVenueId, { tipMode: 'total' })} className={`px-2 py-1.5 rounded-lg text-[9px] font-black transition-all ${activeVenue.tipMode === 'total' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>BILL TOTAL</button>
                     </div>
                   </div>
-                  {tipMode === 'total' ? (
+                  {activeVenue.tipMode === 'total' ? (
                     <div className="space-y-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
                       <div className="relative group max-w-[240px] mx-auto">
                         <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-lg text-indigo-600">$</span>
-                        <input type="number" inputMode="decimal" value={manualGrandTotal || ''} onChange={(e) => setManualGrandTotal(parseFloat(e.target.value) || 0)} placeholder="Total..." className="w-full bg-slate-50 border-2 border-indigo-100 rounded-xl py-3 pl-8 pr-4 text-xl font-black text-indigo-600 text-center focus:border-indigo-500 outline-none transition-all" autoFocus />
+                        <input type="number" inputMode="decimal" value={activeVenue.manualGrandTotal || ''} onChange={(e) => updateVenue(activeVenueId, { manualGrandTotal: parseFloat(e.target.value) || 0 })} placeholder="Total..." className="w-full bg-slate-50 border-2 border-indigo-100 rounded-xl py-3 pl-8 pr-4 text-xl font-black text-indigo-600 text-center focus:border-indigo-500 outline-none transition-all" autoFocus />
                       </div>
                       <div className="flex justify-between items-center px-4 bg-emerald-50 py-2 rounded-xl border border-emerald-100">
                         <span className="text-[9px] font-black text-emerald-600 uppercase">Calculated Tip</span>
-                        <span className="text-sm font-black text-emerald-700 font-mono">${calculations.effectiveTip.toFixed(2)}</span>
+                        <span className="text-sm font-black text-emerald-700 font-mono">${calculations.venueTotals[activeVenueId].effectiveTip.toFixed(2)}</span>
                       </div>
                     </div>
                   ) : (
                     <div className="relative max-w-[160px] mx-auto">
-                      <span className={`absolute left-4 top-1/2 -translate-y-1/2 font-black text-lg transition-colors ${tipMode === 'amount' ? 'text-indigo-600' : 'hidden'}`}>$</span>
-                      <input type="number" inputMode="decimal" value={tipMode === 'percent' ? tipPercent : (tip || '')} onChange={(e) => tipMode === 'percent' ? setTipPercent(parseFloat(e.target.value) || 0) : setTip(parseFloat(e.target.value) || 0)} className={`w-full bg-slate-50 border-2 border-slate-200 rounded-xl py-3 text-xl font-black text-indigo-600 text-center focus:border-indigo-500 outline-none transition-all shadow-sm ${tipMode === 'amount' ? 'pl-8' : ''}`} />
-                      <span className={`absolute right-4 top-1/2 -translate-y-1/2 font-black text-lg transition-colors ${tipMode === 'percent' ? 'text-indigo-600' : 'hidden'}`}>%</span>
+                      <span className={`absolute left-4 top-1/2 -translate-y-1/2 font-black text-lg transition-colors ${activeVenue.tipMode === 'amount' ? 'text-indigo-600' : 'hidden'}`}>$</span>
+                      <input type="number" inputMode="decimal" value={activeVenue.tipMode === 'percent' ? activeVenue.tipPercent : (activeVenue.tip || '')} onChange={(e) => activeVenue.tipMode === 'percent' ? updateVenue(activeVenueId, { tipPercent: parseFloat(e.target.value) || 0 }) : updateVenue(activeVenueId, { tip: parseFloat(e.target.value) || 0 })} className={`w-full bg-slate-50 border-2 border-slate-200 rounded-xl py-3 text-xl font-black text-indigo-600 text-center focus:border-indigo-500 outline-none transition-all shadow-sm ${activeVenue.tipMode === 'amount' ? 'pl-8' : ''}`} />
+                      <span className={`absolute right-4 top-1/2 -translate-y-1/2 font-black text-lg transition-colors ${activeVenue.tipMode === 'percent' ? 'text-indigo-600' : 'hidden'}`}>%</span>
                     </div>
                   )}
                 </div>
 
                 <div className="space-y-3 pt-4 border-t border-slate-100">
                   <div className="flex justify-between items-center">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Add Discount</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Discount for {activeVenue.name}</label>
                     <div className="flex bg-slate-100 p-1 rounded-xl">
-                      <button onClick={() => setDiscountMode('percent')} className={`px-2 py-1.5 rounded-lg text-[9px] font-black transition-all ${discountMode === 'percent' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-400'}`}>%</button>
-                      <button onClick={() => setDiscountMode('amount')} className={`px-2 py-1.5 rounded-lg text-[9px] font-black transition-all ${discountMode === 'amount' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-400'}`}>$</button>
+                      <button onClick={() => updateVenue(activeVenueId, { discountMode: 'percent' })} className={`px-2 py-1.5 rounded-lg text-[9px] font-black transition-all ${activeVenue.discountMode === 'percent' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-400'}`}>%</button>
+                      <button onClick={() => updateVenue(activeVenueId, { discountMode: 'amount' })} className={`px-2 py-1.5 rounded-lg text-[9px] font-black transition-all ${activeVenue.discountMode === 'amount' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-400'}`}>$</button>
                     </div>
                   </div>
                   <div className="relative max-w-[160px] mx-auto">
-                    <span className={`absolute left-4 top-1/2 -translate-y-1/2 font-black text-lg transition-colors text-rose-600 ${discountMode === 'amount' ? '' : 'hidden'}`}>-$</span>
+                    <span className={`absolute left-4 top-1/2 -translate-y-1/2 font-black text-lg transition-colors text-rose-600 ${activeVenue.discountMode === 'amount' ? '' : 'hidden'}`}>-$</span>
                     <input 
                       type="number" 
                       inputMode="decimal" 
-                      value={discountMode === 'percent' ? (discountPercent || '') : (discount || '')} 
-                      onChange={(e) => discountMode === 'percent' ? setDiscountPercent(parseFloat(e.target.value) || 0) : setDiscount(parseFloat(e.target.value) || 0)} 
+                      value={activeVenue.discountMode === 'percent' ? (activeVenue.discountPercent || '') : (activeVenue.discount || '')} 
+                      onChange={(e) => activeVenue.discountMode === 'percent' ? updateVenue(activeVenueId, { discountPercent: parseFloat(e.target.value) || 0 }) : updateVenue(activeVenueId, { discount: parseFloat(e.target.value) || 0 })} 
                       placeholder="0"
-                      className={`w-full bg-slate-50 border-2 border-slate-200 rounded-xl py-3 text-xl font-black text-rose-600 text-center focus:border-rose-400 outline-none transition-all shadow-sm ${discountMode === 'amount' ? 'pl-10' : ''}`} 
+                      className={`w-full bg-slate-50 border-2 border-slate-200 rounded-xl py-3 text-xl font-black text-rose-600 text-center focus:border-rose-400 outline-none transition-all shadow-sm ${activeVenue.discountMode === 'amount' ? 'pl-10' : ''}`} 
                     />
-                    <span className={`absolute right-4 top-1/2 -translate-y-1/2 font-black text-lg transition-colors text-rose-600 ${discountMode === 'percent' ? '' : 'hidden'}`}>% off</span>
+                    <span className={`absolute right-4 top-1/2 -translate-y-1/2 font-black text-lg transition-colors text-rose-600 ${activeVenue.discountMode === 'percent' ? '' : 'hidden'}`}>% off</span>
                   </div>
                 </div>
               </div>
             </div>
+          </div>
           )}
 
           {step === 4 && (
@@ -590,11 +783,11 @@ const App: React.FC = () => {
               <div className="bg-slate-900 p-8 rounded-[2.5rem] text-white shadow-xl relative overflow-hidden">
                 <div className="absolute -right-8 -top-8 text-indigo-500 opacity-20"><BotIcon className="w-32 h-32" /></div>
                 <div className="relative z-10">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Target Total</p>
-                    <h3 className="text-4xl font-black mb-6">${calculations.grandTotal.toFixed(2)}</h3>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Combined Total</p>
+                    <h3 className="text-4xl font-black mb-6">${calculations.totalGrandTotal.toFixed(2)}</h3>
                     <div className="flex justify-between items-center text-xs font-bold border-t border-white/10 pt-4">
                         <span className="opacity-60 uppercase">Currently Recorded</span>
-                        <span className={`text-lg font-mono ${Math.abs(paidTotal - calculations.grandTotal) < 0.01 ? 'text-emerald-400' : 'text-white'}`}>${paidTotal.toFixed(2)}</span>
+                        <span className={`text-lg font-mono ${Math.abs(paidTotal - calculations.totalGrandTotal) < 0.01 ? 'text-emerald-400' : 'text-white'}`}>${paidTotal.toFixed(2)}</span>
                     </div>
                 </div>
               </div>
@@ -602,7 +795,7 @@ const App: React.FC = () => {
                 {friends.map(f => {
                   const shareAmount = calculations.itemCosts[f.id] || 0;
                   return (
-                    <div key={f.id} className={`p-4 rounded-2xl border-2 transition-all ${Math.abs((payments[f.id] || 0) - calculations.grandTotal) < 0.01 ? 'border-indigo-500 bg-indigo-50/50' : 'border-slate-100 bg-white shadow-sm'}`}>
+                    <div key={f.id} className={`p-4 rounded-2xl border-2 transition-all ${Math.abs((payments[f.id] || 0) - calculations.totalGrandTotal) < 0.01 ? 'border-indigo-500 bg-indigo-50/50' : 'border-slate-100 bg-white shadow-sm'}`}>
                       <div className="flex items-center gap-3">
                           <div className="flex items-center gap-3 shrink-0">
                               <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center font-black text-slate-600 text-xs">{f.name[0]}</div>
@@ -650,47 +843,55 @@ const App: React.FC = () => {
               </button>
 
               {showDetailedBreakdown && (
-                <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300 mb-6">
-                  {friends.map(f => {
-                    const friendItems = items.filter(item => item.sharedWith.includes(f.id));
-                    if (friendItems.length === 0 && (calculations.itemCosts[f.id] || 0) <= 0) return null;
-                    
-                    const totalCost = calculations.itemCosts[f.id] || 0;
-                    const subtotalWithTax = friendItems.reduce((acc, item) => {
-                      const shareCount = item.sharedWith.length;
-                      const baseShare = item.price / shareCount;
-                      const taxRate = getItemTaxRate(item);
-                      const taxShare = (item.price * taxRate) / shareCount;
-                      return acc + baseShare + taxShare;
-                    }, 0);
-                    const tipShare = totalCost - subtotalWithTax;
+                <div className="space-y-6 animate-in fade-in slide-in-from-top-2 duration-300 mb-6">
+                  {venues.map(v => {
+                    const venueItems = items.filter(i => i.venueId === v.id);
+                    if (venueItems.length === 0) return null;
+                    const vt = calculations.venueTotals[v.id];
 
                     return (
-                      <div key={f.id} className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
-                        <div className="flex justify-between items-center mb-2 border-b border-slate-200 pb-2">
-                          <span className="font-black text-slate-800 text-xs uppercase">{f.name}</span>
-                          <span className="font-black text-indigo-600 text-xs">${totalCost.toFixed(2)}</span>
-                        </div>
-                        <div className="space-y-1.5">
-                          {friendItems.map(item => {
+                      <div key={v.id} className="space-y-3">
+                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">{v.name} Breakdown</h4>
+                        {friends.map(f => {
+                          const friendItems = venueItems.filter(item => item.sharedWith.includes(f.id));
+                          if (friendItems.length === 0) return null;
+
+                          const subtotalWithTax = friendItems.reduce((acc, item) => {
                             const shareCount = item.sharedWith.length;
                             const baseShare = item.price / shareCount;
                             const taxRate = getItemTaxRate(item);
                             const taxShare = (item.price * taxRate) / shareCount;
-                            return (
-                              <div key={item.id} className="flex justify-between text-[10px] text-slate-500">
-                                <span className="flex-1 truncate mr-2">{item.name} {shareCount > 1 ? <span className="text-[8px] opacity-60">(1/{shareCount})</span> : ''}</span>
-                                <span className="font-mono">${(baseShare + taxShare).toFixed(2)}</span>
+                            return acc + baseShare + taxShare;
+                          }, 0);
+                          
+                          // Proportional tip for this friend in this venue
+                          const venueSubtotal = calculateItemTotals(venueItems).total;
+                          const tipShare = venueSubtotal > 0 ? (subtotalWithTax / venueSubtotal) * vt.effectiveTip : 0;
+                          const totalForFriendInVenue = subtotalWithTax + tipShare;
+
+                          return (
+                            <div key={f.id} className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                              <div className="flex justify-between items-center mb-2 border-b border-slate-200 pb-2">
+                                <span className="font-black text-slate-800 text-[10px] uppercase">{f.name}</span>
+                                <span className="font-black text-indigo-600 text-[10px]">${totalForFriendInVenue.toFixed(2)}</span>
                               </div>
-                            );
-                          })}
-                          {Math.abs(tipShare) > 0.005 && (
-                            <div className="flex justify-between text-[10px] text-indigo-400 font-bold pt-1 border-t border-slate-200 mt-1">
-                              <span>Tip & Adjustments</span>
-                              <span className="font-mono">{tipShare >= 0 ? '+' : ''}${tipShare.toFixed(2)}</span>
+                              <div className="space-y-1">
+                                {friendItems.map(item => (
+                                  <div key={item.id} className="flex justify-between text-[9px] text-slate-500">
+                                    <span className="flex-1 truncate mr-2">{item.name} (1/{item.sharedWith.length})</span>
+                                    <span className="font-mono">${((item.price * (1 + getItemTaxRate(item))) / item.sharedWith.length).toFixed(2)}</span>
+                                  </div>
+                                ))}
+                                {Math.abs(tipShare) > 0.005 && (
+                                  <div className="flex justify-between text-[9px] text-indigo-400 font-bold pt-1 border-t border-slate-200 mt-1">
+                                    <span>Tip & Adjustments</span>
+                                    <span className="font-mono">{tipShare >= 0 ? '+' : ''}${tipShare.toFixed(2)}</span>
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          )}
-                        </div>
+                          );
+                        })}
                       </div>
                     );
                   })}

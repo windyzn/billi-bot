@@ -12,6 +12,18 @@ export interface Friend {
   partnerId?: string; // ID of another friend to group as a couple
 }
 
+export interface Venue {
+  id: string;
+  name: string;
+  tip: number;
+  tipMode: 'amount' | 'percent' | 'total';
+  tipPercent: number;
+  discount: number;
+  discountMode: 'amount' | 'percent';
+  discountPercent: number;
+  manualGrandTotal: number;
+}
+
 export interface BillItem {
   id: string;
   name: string;
@@ -20,6 +32,7 @@ export interface BillItem {
   sharedWith: string[]; // Array of Friend IDs
   isTaxIncluded?: boolean; // If true, don't add tax on top
   customTaxRate?: number; // For CUSTOM category, e.g. 0.10 for 10%
+  venueId: string;
 }
 
 export interface PaymentRecord {
