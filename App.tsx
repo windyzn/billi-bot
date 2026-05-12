@@ -53,6 +53,13 @@ const App: React.FC = () => {
   const [editingVenueId, setEditingVenueId] = useState<string | null>(null);
   const [editVenueName, setEditVenueName] = useState('');
 
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editingItemName, setEditingItemName] = useState('');
+  const [editingItemPrice, setEditingItemPrice] = useState('');
+  const [editingItemTaxCategory, setEditingItemTaxCategory] = useState<TaxCategory>(TaxCategory.GST);
+  const [editingItemIsTaxIncluded, setEditingItemIsTaxIncluded] = useState(false);
+  const [editingItemCustomTaxRate, setEditingItemCustomTaxRate] = useState('');
+
   // Load history from localStorage
   useEffect(() => {
     const saved = localStorage.getItem('bill_bot_name_history');
@@ -138,6 +145,10 @@ const App: React.FC = () => {
 
   const updateVenue = (venueId: string, updates: Partial<Venue>) => {
     setVenues(venues.map(v => v.id === venueId ? { ...v, ...updates } : v));
+  };
+
+  const updateItem = (itemId: string, updates: Partial<BillItem>) => {
+    setItems(items.map(item => item.id === itemId ? { ...item, ...updates } : item));
   };
 
   const addItem = (name: string, price: number, taxCategory: TaxCategory, isTaxIncluded = false, customTaxRate?: number) => {
@@ -548,11 +559,32 @@ const App: React.FC = () => {
               <div className="bg-slate-50 border border-slate-200 rounded-b-3xl rounded-tr-3xl p-6 space-y-6 shadow-inner -mt-[1px]">
                 <div className="space-y-4">
                   <div className="space-y-3">
+                    <div className="flex justify-between items-center px-1">
+                      <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
+                        {editingItemId ? 'Editing Item' : `Add Item to ${activeVenue.name}`}
+                      </h3>
+                      {editingItemId && (
+                        <button 
+                          onClick={() => {
+                            setEditingItemId(null);
+                            setEditingItemName('');
+                            setEditingItemPrice('');
+                            setEditingItemTaxCategory(TaxCategory.GST);
+                            setEditingItemIsTaxIncluded(false);
+                            setEditingItemCustomTaxRate('');
+                          }}
+                          className="text-[9px] font-black text-slate-400 uppercase tracking-tight hover:text-slate-600 transition-colors"
+                        >
+                          Nevermind
+                        </button>
+                      )}
+                    </div>
                     <input 
                       type="text" 
                       placeholder="Item Name (e.g. Burger)" 
+                      value={editingItemName}
+                      onChange={(e) => setEditingItemName(e.target.value)}
                       className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 outline-none font-bold shadow-sm"
-                      id="itemNameInput"
                     />
                     
                     <div className="flex flex-col gap-2">
@@ -563,18 +595,21 @@ const App: React.FC = () => {
                             type="number" 
                             inputMode="decimal" 
                             placeholder="0.00" 
+                            value={editingItemPrice}
+                            onChange={(e) => setEditingItemPrice(e.target.value)}
                             className="w-full bg-white border border-slate-300 rounded-xl pl-6 pr-4 py-3 text-sm focus:border-indigo-500 outline-none font-mono shadow-sm"
-                            id="itemPriceInput"
                           />
                         </div>
                         <select 
-                          id="itemTaxSelect"
+                          value={editingItemIsTaxIncluded ? 'INCLUDED' : editingItemTaxCategory}
                           onChange={(e) => {
-                            const customInput = document.getElementById('customTaxContainer');
-                            if (e.target.value === TaxCategory.CUSTOM) {
-                              customInput?.classList.remove('hidden');
+                            const val = e.target.value;
+                            if (val === 'INCLUDED') {
+                              setEditingItemIsTaxIncluded(true);
+                              setEditingItemTaxCategory(TaxCategory.GST);
                             } else {
-                              customInput?.classList.add('hidden');
+                              setEditingItemIsTaxIncluded(false);
+                              setEditingItemTaxCategory(val as TaxCategory);
                             }
                           }}
                           className="flex-[3] bg-white border border-slate-300 rounded-xl px-2 py-3 text-[10px] font-bold text-slate-600 focus:border-indigo-500 outline-none shadow-sm"
@@ -587,60 +622,86 @@ const App: React.FC = () => {
                         </select>
                       </div>
                       
-                      <div id="customTaxContainer" className="hidden animate-in fade-in slide-in-from-top-1 duration-200">
-                        <div className="relative">
-                          <input 
-                            id="customTaxRateInput"
-                            type="number" 
-                            inputMode="decimal" 
-                            placeholder="Custom Tax % (e.g. 10)" 
-                            className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 outline-none font-bold" 
-                          />
-                          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">%</span>
+                      {editingItemTaxCategory === TaxCategory.CUSTOM && !editingItemIsTaxIncluded && (
+                        <div className="animate-in fade-in slide-in-from-top-1 duration-200">
+                          <div className="relative">
+                            <input 
+                              type="number" 
+                              inputMode="decimal" 
+                              placeholder="Custom Tax % (e.g. 10)" 
+                              value={editingItemCustomTaxRate}
+                              onChange={(e) => setEditingItemCustomTaxRate(e.target.value)}
+                              className="w-full bg-white border border-slate-300 rounded-xl px-4 py-3 text-sm focus:border-indigo-500 outline-none font-bold" 
+                            />
+                            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">%</span>
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                     
                     <button onClick={() => {
-                        const n = document.getElementById('itemNameInput') as HTMLInputElement;
-                        const p = document.getElementById('itemPriceInput') as HTMLInputElement;
-                        const t = document.getElementById('itemTaxSelect') as HTMLSelectElement;
-                        const c = document.getElementById('customTaxRateInput') as HTMLInputElement;
-                        
-                        if (n.value && p.value) { 
-                          const isInc = t.value === 'INCLUDED';
-                          const cat = isInc ? TaxCategory.GST : t.value as TaxCategory;
-                          const customRate = cat === TaxCategory.CUSTOM ? (parseFloat(c.value) / 100) : undefined;
+                        if (editingItemName && editingItemPrice) { 
+                          const price = parseFloat(editingItemPrice);
+                          const customRate = editingItemTaxCategory === TaxCategory.CUSTOM ? (parseFloat(editingItemCustomTaxRate) / 100) : undefined;
                           
-                          addItem(n.value, parseFloat(p.value), cat, isInc, customRate); 
+                          if (editingItemId) {
+                            updateItem(editingItemId, {
+                              name: editingItemName,
+                              price,
+                              taxCategory: editingItemTaxCategory,
+                              isTaxIncluded: editingItemIsTaxIncluded,
+                              customTaxRate: customRate
+                            });
+                            setEditingItemId(null);
+                          } else {
+                            addItem(editingItemName, price, editingItemTaxCategory, editingItemIsTaxIncluded, customRate);
+                          }
                           
                           // Reset
-                          n.value = ''; 
-                          p.value = ''; 
-                          c.value = '';
-                          t.value = TaxCategory.GST;
-                          document.getElementById('customTaxContainer')?.classList.add('hidden');
+                          setEditingItemName('');
+                          setEditingItemPrice('');
+                          setEditingItemIsTaxIncluded(false);
+                          setEditingItemTaxCategory(TaxCategory.GST);
+                          setEditingItemCustomTaxRate('');
                         }
-                      }} className="w-full bg-indigo-600 text-white font-black py-4 rounded-xl hover:bg-indigo-700 transition-all active:scale-[0.98] shadow-lg shadow-indigo-100 uppercase tracking-widest text-xs">
-                      Add to {activeVenue.name}
+                      }} className={`w-full text-white font-black py-4 rounded-xl transition-all active:scale-[0.98] shadow-lg uppercase tracking-widest text-xs ${editingItemId ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-100' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-100'}`}>
+                      {editingItemId ? 'Save Changes' : `Add to ${activeVenue.name}`}
                     </button>
                   </div>
                 </div>
                 
                 <div className="max-h-[35vh] overflow-y-auto space-y-2 pr-1 no-scrollbar pt-4 border-t border-slate-200">
                   {items.filter(i => i.venueId === activeVenueId).map(item => (
-                    <div key={item.id} className="flex justify-between items-center p-4 bg-white border border-slate-100 rounded-2xl shadow-sm hover:border-indigo-200 transition-all group">
+                    <div key={item.id} className={`flex justify-between items-center p-4 bg-white border rounded-2xl shadow-sm transition-all group ${editingItemId === item.id ? 'border-indigo-500 ring-2 ring-indigo-50' : 'border-slate-100 hover:border-indigo-200'}`}>
                       <div>
                         <p className="font-bold text-slate-800 text-sm">{item.name}</p>
                         <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md ${item.isTaxIncluded ? 'bg-indigo-50 text-indigo-600' : 'bg-blue-100 text-blue-700'}`}>
                           {item.isTaxIncluded ? 'Tax Included' : `${item.taxCategory === TaxCategory.CUSTOM ? (item.customTaxRate! * 100).toFixed(0) : (getItemTaxRate(item) * 100).toFixed(0)}% Tax`}
                         </span>
                       </div>
-                      <div className="flex items-center gap-4">
-                        <span className="font-mono font-black text-slate-900">${item.price.toFixed(2)}</span>
-                        <button onClick={() => removeItem(item.id)} className="text-slate-300 hover:text-rose-500 transition-colors p-1">
-                          <DeleteIcon className="w-5 h-5" />
-                        </button>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-black text-slate-900 mr-2">${item.price.toFixed(2)}</span>
+                        <div className="flex items-center gap-1">
+                          <button 
+                            onClick={() => {
+                              setEditingItemId(item.id);
+                              setEditingItemName(item.name);
+                              setEditingItemPrice(item.price.toString());
+                              setEditingItemTaxCategory(item.taxCategory);
+                              setEditingItemIsTaxIncluded(!!item.isTaxIncluded);
+                              setEditingItemCustomTaxRate(item.customTaxRate ? (item.customTaxRate * 100).toString() : '');
+                              // Scroll form into view if needed
+                              window.scrollTo({ top: 0, behavior: 'smooth' });
+                            }} 
+                            className="p-2 text-slate-300 hover:text-indigo-500 transition-colors"
+                            title="Edit item"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                          </button>
+                          <button onClick={() => removeItem(item.id)} className="p-2 text-slate-300 hover:text-rose-500 transition-colors" title="Delete item">
+                            <DeleteIcon className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
