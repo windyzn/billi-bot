@@ -496,7 +496,7 @@ const App: React.FC = () => {
                           setEditingVenueId(v.id);
                           setEditVenueName(v.name);
                         }}
-                        className={`px-5 py-3 rounded-t-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap border-t border-x ${v.id === activeVenueId ? 'bg-slate-50 border-slate-200 text-indigo-600' : 'bg-slate-100/50 border-transparent text-slate-400 hover:bg-slate-100 hover:text-slate-500'}`}
+                        className={`px-5 py-3 rounded-t-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap border-t-2 border-x ${v.id === activeVenueId ? 'bg-slate-50 border-slate-200 border-t-indigo-500 text-indigo-600 z-10 relative -mb-[1px]' : 'bg-slate-100/50 border-transparent text-slate-400 hover:bg-slate-100 hover:text-slate-500'}`}
                       >
                         {v.name}
                       </button>
@@ -511,7 +511,7 @@ const App: React.FC = () => {
                             setActiveVenueId(DEFAULT_VENUE_ID);
                           }
                         }}
-                        className="absolute -top-1 -right-1 bg-rose-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[8px] border border-white shadow-sm transition-transform hover:scale-110"
+                        className="absolute -top-1 -right-1 bg-rose-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[8px] border border-white shadow-sm transition-transform hover:scale-110 z-20"
                       >
                         ×
                       </button>
@@ -548,7 +548,7 @@ const App: React.FC = () => {
                 ) : (
                   <button 
                     onClick={() => setIsAddingVenue(true)}
-                    className="px-4 py-3 rounded-t-2xl text-[10px] font-black uppercase tracking-widest bg-indigo-50 text-indigo-500 border-t border-x border-indigo-100 hover:bg-indigo-100/50 transition-all font-mono"
+                    className="px-4 py-3 rounded-t-2xl text-[10px] font-black uppercase tracking-widest bg-indigo-50 text-indigo-500 border-t border-x border-indigo-100 hover:bg-indigo-100/50 transition-all"
                   >
                     + NEW PLACE
                   </button>
@@ -724,7 +724,7 @@ const App: React.FC = () => {
                   <button 
                     key={v.id} 
                     onClick={() => setActiveVenueId(v.id)}
-                    className={`px-5 py-3 rounded-t-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap border-t border-x ${v.id === activeVenueId ? 'bg-slate-50 border-slate-200 text-indigo-600' : 'bg-slate-100/50 border-transparent text-slate-400 hover:bg-slate-100 hover:text-slate-500'}`}
+                    className={`px-5 py-3 rounded-t-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap border-t-2 border-x ${v.id === activeVenueId ? 'bg-slate-50 border-slate-200 border-t-indigo-500 text-indigo-600 z-10 relative -mb-[1px]' : 'bg-slate-100/50 border-transparent text-slate-400 hover:bg-slate-100 hover:text-slate-500'}`}
                   >
                     {v.name}
                   </button>
@@ -905,6 +905,34 @@ const App: React.FC = () => {
 
               {showDetailedBreakdown && (
                 <div className="space-y-6 animate-in fade-in slide-in-from-top-2 duration-300 mb-6">
+                  {/* Summary Totals */}
+                  <div className="bg-indigo-50 p-5 rounded-3xl border border-indigo-100 space-y-3">
+                    <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest px-1">Payment Math Summary</h4>
+                    <div className="space-y-2">
+                      {friends.map(f => {
+                        const totalSpent = calculations.itemCosts[f.id] || 0;
+                        const totalPaid = payments[f.id] || 0;
+                        if (totalSpent === 0 && totalPaid === 0) return null;
+                        
+                        return (
+                          <div key={f.id} className="flex justify-between items-center text-[10px] px-1 group">
+                            <span className="font-bold text-slate-600 group-hover:text-slate-900 transition-colors">{f.name}</span>
+                            <div className="flex items-center gap-4">
+                              <div className="text-right">
+                                <span className="text-[9px] text-slate-400 uppercase tracking-tighter mr-1">Spent</span>
+                                <span className="font-mono text-slate-700">${totalSpent.toFixed(2)}</span>
+                              </div>
+                              <div className="text-right border-l border-indigo-200 pl-4 min-w-[80px]">
+                                <span className="text-[9px] text-slate-400 uppercase tracking-tighter mr-1">Paid</span>
+                                <span className={`font-mono ${totalPaid > 0 ? "text-emerald-600 font-bold" : "text-slate-400"}`}>${totalPaid.toFixed(2)}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   {venues.map(v => {
                     const venueItems = items.filter(i => i.venueId === v.id);
                     if (venueItems.length === 0) return null;
