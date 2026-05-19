@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Friend, BillItem, TaxCategory, GST_RATE, PST_RATE, Venue } from './types';
-import { calculateIndividualCosts, solveDebts, calculateItemTotals, getItemTaxRate } from './utils/finance';
+import { calculateIndividualCosts, solveDebts, solveDebtsUnoptimized, calculateItemTotals, getItemTaxRate } from './utils/finance';
 import StepProgress from './components/StepProgress';
 
 const BotIcon = ({ className }: { className?: string }) => (
@@ -41,6 +41,7 @@ const App: React.FC = () => {
   }]);
   const [activeVenueId, setActiveVenueId] = useState<string>(DEFAULT_VENUE_ID);
   const [payments, setPayments] = useState<Record<string, number>>({});
+  const [optimizeSettlements, setOptimizeSettlements] = useState(true);
   const [etransferEmail, setEtransferEmail] = useState('');
   const [linkingFriendId, setLinkingFriendId] = useState<string | null>(null);
   const [showCoupleHint, setShowCoupleHint] = useState(false);
@@ -234,9 +235,15 @@ const App: React.FC = () => {
       balances[f.id] = (payments[f.id] || 0) - (aggregateItemCosts[f.id] || 0);
     });
     const settlements = solveDebts(balances, friends);
+    const settlementsUnoptimized = solveDebtsUnoptimized(balances, friends);
     
-    return { itemCosts: aggregateItemCosts, venueTotals, totalGrandTotal, settlements };
+    return { itemCosts: aggregateItemCosts, venueTotals, totalGrandTotal, settlements, settlementsUnoptimized };
   }, [friends, items, venues, payments]);
+
+  const activeSettlements = useMemo(() => 
+    optimizeSettlements ? calculations.settlements : calculations.settlementsUnoptimized,
+    [optimizeSettlements, calculations]
+  );
 
   const paidTotal = useMemo(() => 
     (Object.values(payments) as number[]).reduce((acc, curr) => acc + (curr || 0), 0),
@@ -263,9 +270,9 @@ const App: React.FC = () => {
     });
     text += `-------------------\n`;
 
-    if (calculations.settlements.length > 0) {
+    if (activeSettlements.length > 0) {
       text += `SETTLEMENTS:\n`;
-      text += calculations.settlements.map(s => `• ${s.fromName} pays ${s.toName}: $${s.amount.toFixed(2)}`).join('\n');
+      text += activeSettlements.map(s => `• ${s.fromName} pays ${s.toName}: $${s.amount.toFixed(2)}`).join('\n');
       text += `\n-------------------\n`;
     }
 
@@ -888,11 +895,34 @@ const App: React.FC = () => {
 
           {step === 5 && (
             <div className="space-y-8 animate-in zoom-in-95 duration-500 flex-1 flex flex-col relative">
-              <div className="text-center">
-                <div className="w-20 h-20 bg-indigo-600 rounded-full flex items-center justify-center mx-auto shadow-2xl shadow-indigo-100 text-white mb-6">
+              <div className="text-center space-y-4">
+                <div className="w-20 h-20 bg-indigo-600 rounded-full flex items-center justify-center mx-auto shadow-2xl shadow-indigo-100 text-white">
                     <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"/></svg>
                 </div>
                 <h2 className="text-3xl font-black text-slate-800 tracking-tight">Settlements</h2>
+
+                {/* Settlement Type Toggle */}
+                <div className="space-y-2 mt-4">
+                  <div className="flex bg-slate-100 p-1 rounded-2xl max-w-[280px] mx-auto border border-slate-200/50">
+                    <button 
+                      onClick={() => setOptimizeSettlements(true)}
+                      className={`flex-1 py-2 px-3 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${optimizeSettlements ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+                    >
+                      Simplified
+                    </button>
+                    <button 
+                      onClick={() => setOptimizeSettlements(false)}
+                      className={`flex-1 py-2 px-3 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${!optimizeSettlements ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+                    >
+                      Direct
+                    </button>
+                  </div>
+                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider leading-relaxed px-4">
+                    {optimizeSettlements 
+                      ? "Minimizes the number of transactions to settle up." 
+                      : "Direct proportional debts between everyone."}
+                  </p>
+                </div>
               </div>
 
               <button 
@@ -988,9 +1018,9 @@ const App: React.FC = () => {
               )}
 
               <div className="space-y-4 flex-1">
-                {calculations.settlements.length > 0 ? (
+                {activeSettlements.length > 0 ? (
                   <div className="space-y-3">
-                    {calculations.settlements.map((s, idx) => (
+                    {activeSettlements.map((s, idx) => (
                         <div key={idx} className="bg-slate-50 p-6 rounded-[2.5rem] flex items-center justify-between border border-slate-100 shadow-sm relative group hover:border-indigo-300 transition-all">
                           <div className="flex-1">
                             <span className="font-black text-slate-900 text-lg block leading-none">{s.fromName}</span>

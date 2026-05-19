@@ -125,3 +125,69 @@ export const solveDebts = (
 
   return settleList;
 };
+
+export const solveDebtsUnoptimized = (
+  balances: Record<string, number>,
+  friends: Friend[]
+): Settlement[] => {
+  const settleList: Settlement[] = [];
+  
+  // Merge balances for couples
+  const processedBalances: Record<string, number> = {};
+  const processedFriendIds = new Set<string>();
+  const namesMap: Record<string, string> = {}; 
+
+  friends.forEach(f => {
+    if (processedFriendIds.has(f.id)) return;
+
+    if (f.partnerId) {
+      const partner = friends.find(p => p.id === f.partnerId);
+      if (partner) {
+        const combinedId = `couple_${f.id}_${partner.id}`;
+        processedBalances[combinedId] = (balances[f.id] || 0) + (balances[partner.id] || 0);
+        namesMap[combinedId] = `${f.name} & ${partner.name}`;
+        processedFriendIds.add(f.id);
+        processedFriendIds.add(partner.id);
+      } else {
+        processedBalances[f.id] = balances[f.id] || 0;
+        namesMap[f.id] = f.name;
+        processedFriendIds.add(f.id);
+      }
+    } else {
+      processedBalances[f.id] = balances[f.id] || 0;
+      namesMap[f.id] = f.name;
+      processedFriendIds.add(f.id);
+    }
+  });
+
+  const creditors = Object.keys(processedBalances)
+    .filter(id => processedBalances[id] > 0.01)
+    .map(id => ({ id, balance: processedBalances[id] }))
+    .sort((a, b) => b.balance - a.balance);
+
+  const debtors = Object.keys(processedBalances)
+    .filter(id => processedBalances[id] < -0.01)
+    .map(id => ({ id, balance: -processedBalances[id] }))
+    .sort((a, b) => b.balance - a.balance);
+
+  const totalCredit = creditors.reduce((sum, c) => sum + c.balance, 0);
+
+  if (totalCredit > 0.01) {
+    debtors.forEach(debtor => {
+      creditors.forEach(creditor => {
+        const shareOfDebt = debtor.balance * (creditor.balance / totalCredit);
+        if (shareOfDebt > 0.01) {
+          settleList.push({
+            from: debtor.id,
+            to: creditor.id,
+            fromName: namesMap[debtor.id],
+            toName: namesMap[creditor.id],
+            amount: Number(shareOfDebt.toFixed(2))
+          });
+        }
+      });
+    });
+  }
+
+  return settleList;
+};
