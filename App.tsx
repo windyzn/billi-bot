@@ -259,7 +259,7 @@ const App: React.FC = () => {
   };
 
   const generateReportText = () => {
-    let text = `Total Sessions: $${calculations.totalGrandTotal.toFixed(2)}\n`;
+    let text = `Total Price: $${calculations.totalGrandTotal.toFixed(2)}\n`;
     text += `-------------------\n`;
     
     venues.forEach(v => {
@@ -279,9 +279,16 @@ const App: React.FC = () => {
     text += `BREAKDOWN:\n`;
     const breakdownLines = friends.map(f => {
       const totalCost = calculations.itemCosts[f.id] || 0;
-      
       if (totalCost > 0) {
-        return `${f.name}: $${totalCost.toFixed(2)}`;
+        const friendItemNames = items
+          .filter(item => item.sharedWith.includes(f.id))
+          .map(item => item.name);
+        
+        if (friendItemNames.length > 0) {
+          return `${f.name}: $${totalCost.toFixed(2)} (${friendItemNames.join(', ')})`;
+        } else {
+          return `${f.name}: $${totalCost.toFixed(2)}`;
+        }
       }
       return null;
     }).filter(Boolean);
@@ -503,9 +510,25 @@ const App: React.FC = () => {
                           setEditingVenueId(v.id);
                           setEditVenueName(v.name);
                         }}
-                        className={`px-5 py-3 rounded-t-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap border-t-2 border-x ${v.id === activeVenueId ? 'bg-slate-50 border-slate-200 border-t-indigo-500 text-indigo-600 z-10 relative -mb-[1px]' : 'bg-slate-100/50 border-transparent text-slate-400 hover:bg-slate-100 hover:text-slate-500'}`}
+                        className={`px-5 py-3 rounded-t-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap border-t-2 border-x ${v.id === activeVenueId ? 'bg-slate-50 border-slate-200 border-t-indigo-500 text-indigo-600 z-10 relative -mb-[1px]' : 'bg-slate-100/50 border-transparent text-slate-400 hover:bg-slate-100 hover:text-slate-500'} flex items-center gap-1.5`}
                       >
-                        {v.name}
+                        <span>{v.name}</span>
+                        {v.id === activeVenueId && (
+                          <span 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingVenueId(v.id);
+                              setEditVenueName(v.name);
+                            }}
+                            className="text-slate-300 hover:text-indigo-600 transition-colors cursor-pointer p-0.5"
+                            title="Rename"
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                            </svg>
+                          </span>
+                        )}
                       </button>
                     )}
                     {v.id !== DEFAULT_VENUE_ID && v.id === activeVenueId && editingVenueId !== v.id && (
@@ -728,13 +751,57 @@ const App: React.FC = () => {
               {/* Venue Tabs */}
               <div className="flex items-end gap-1 px-2">
                 {venues.map(v => (
-                  <button 
-                    key={v.id} 
-                    onClick={() => setActiveVenueId(v.id)}
-                    className={`px-5 py-3 rounded-t-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap border-t-2 border-x ${v.id === activeVenueId ? 'bg-slate-50 border-slate-200 border-t-indigo-500 text-indigo-600 z-10 relative -mb-[1px]' : 'bg-slate-100/50 border-transparent text-slate-400 hover:bg-slate-100 hover:text-slate-500'}`}
-                  >
-                    {v.name}
-                  </button>
+                  <div key={v.id} className="relative group shrink-0">
+                    {editingVenueId === v.id ? (
+                      <div className="flex items-center bg-white rounded-t-2xl border-t border-x border-slate-200 overflow-hidden shadow-sm">
+                        <input 
+                          autoFocus
+                          type="text" 
+                          value={editVenueName}
+                          onChange={(e) => setEditVenueName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              updateVenue(v.id, { name: editVenueName || v.name });
+                              setEditingVenueId(null);
+                            }
+                            if (e.key === 'Escape') setEditingVenueId(null);
+                          }}
+                          onBlur={() => {
+                            updateVenue(v.id, { name: editVenueName || v.name });
+                            setEditingVenueId(null);
+                          }}
+                          className="px-4 py-3 text-[10px] font-black uppercase tracking-widest outline-none w-32"
+                        />
+                      </div>
+                    ) : (
+                      <button 
+                        onClick={() => setActiveVenueId(v.id)}
+                        onDoubleClick={() => {
+                          setEditingVenueId(v.id);
+                          setEditVenueName(v.name);
+                        }}
+                        className={`px-5 py-3 rounded-t-2xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap border-t-2 border-x ${v.id === activeVenueId ? 'bg-slate-50 border-slate-200 border-t-indigo-500 text-indigo-600 z-10 relative -mb-[1px]' : 'bg-slate-100/50 border-transparent text-slate-400 hover:bg-slate-100 hover:text-slate-500'} flex items-center gap-1.5`}
+                      >
+                        <span>{v.name}</span>
+                        {v.id === activeVenueId && (
+                          <span 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingVenueId(v.id);
+                              setEditVenueName(v.name);
+                            }}
+                            className="text-slate-300 hover:text-indigo-600 transition-colors cursor-pointer p-0.5"
+                            title="Rename"
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                            </svg>
+                          </span>
+                        )}
+                      </button>
+                    )}
+                  </div>
                 ))}
               </div>
 
